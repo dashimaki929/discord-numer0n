@@ -1,0 +1,6 @@
+{
+    "bot": {
+        "id": "Your bot ID goes here",
+        "token": "Your bot token goes here"
+    }
+}
