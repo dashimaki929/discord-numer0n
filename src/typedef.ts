@@ -1,4 +1,5 @@
 import { CommandInteraction, ButtonInteraction, ModalSubmitInteraction } from 'discord.js';
+import { Session } from './Session';
 
 export type Settings = {
     bot: BotSetting;
@@ -16,7 +17,7 @@ export type Commands = {
 export type Command = {
     description: string | null;
     options: CommandOption[];
-    execute(interaction: CommandInteraction | ButtonInteraction | ModalSubmitInteraction): void;
+    execute(interaction: CommandInteraction | ButtonInteraction | ModalSubmitInteraction, session: Session): void;
 }
 
 export type CommandOption = {
@@ -30,4 +31,8 @@ export type CommandOption = {
 export type CommandOptionChoice = {
     name: string;
     value: string;
+}
+
+export type Sessions = {
+    [key: string]: Session;
 }
