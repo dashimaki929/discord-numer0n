@@ -6,8 +6,6 @@ import {
     ButtonStyle,
     ButtonInteraction,
     CommandInteraction,
-    StringSelectMenuBuilder,
-    StringSelectMenuOptionBuilder,
     ModalBuilder,
     TextInputBuilder,
     TextInputStyle,
@@ -33,6 +31,11 @@ export const commands: Commands = {
         description: '🟢 ゲームをホスト',
         options: [],
         execute: async (interaction: CommandInteraction, session) => {
+            if (session.hostUserId) {
+                notificationReply(interaction, '既にゲームがホストされています。\n※１つのテキストチャンネルで１ゲームのみ立ち上げられます。');
+                return;
+            }
+
             const userId = interaction.user.id;
             session.hostUserId = userId;
             session.userList.push(new User(userId));
