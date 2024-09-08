@@ -1,11 +1,14 @@
+import * as dotenv from 'dotenv';
+dotenv.config();
+
 import { Client, GatewayIntentBits } from 'discord.js';
 
-import { Settings, Sessions } from './typedef';
+import { BotSetting, Sessions } from './typedef';
 import { Session } from './Session';
 import { commands } from './commands';
-import { readFile, registSlashCommands } from './util';
+import { registSlashCommands } from './util';
 
-const settings: Settings = JSON.parse(readFile('./config/settings.json'));
+const settings: BotSetting = { id: process.env.DISCORD_BOT_ID || '', token: process.env.DISCORD_BOT_TOKEN || '' };
 const Sessions: Sessions = {};
 
 const client = new Client({
@@ -13,7 +16,7 @@ const client = new Client({
 });
 
 client.once('ready', async () => {
-    await registSlashCommands(commands, settings.bot);
+    await registSlashCommands(commands, settings);
 
     console.log('Bot "discord-numer0n" has successfully started!');
 });
@@ -32,4 +35,4 @@ client.on('interactionCreate', interaction => {
     }
 });
 
-client.login(settings.bot.token);
+client.login(settings.token);
