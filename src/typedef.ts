@@ -15,7 +15,7 @@ export type Commands = {
 }
 
 export type Command = {
-    description: string | null;
+    description: string;
     options: CommandOption[];
     execute(interaction: CommandInteraction | ButtonInteraction | ModalSubmitInteraction, session: Session): void;
 }

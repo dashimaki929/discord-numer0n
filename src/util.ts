@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { REST, Routes } from 'discord.js';
+import { ButtonInteraction, CommandInteraction, ModalSubmitInteraction, REST, Routes } from 'discord.js';
 
 import { Commands, Command, BotSetting } from './typedef';
 
@@ -50,4 +50,12 @@ export async function registSlashCommands(commands: Commands, setting: BotSettin
     } catch (error) {
         console.log('[ERROR]', error);
     }
+}
+
+export async function notificationReply(interaction: CommandInteraction | ButtonInteraction | ModalSubmitInteraction, content: string) {
+    await interaction.reply({ content, ephemeral: true }).then(msg => {
+        setTimeout(() => {
+            msg.delete();
+        }, 2000);
+    })
 }
