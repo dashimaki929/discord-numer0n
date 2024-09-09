@@ -10,21 +10,19 @@ import {
     TextInputBuilder,
     TextInputStyle,
     ModalSubmitInteraction,
-    TextChannel
 } from 'discord.js';
 
 import { Commands } from './typedef';
-import { judgeNumber, notificationReply, toHalfWidthDigit } from './util';
-
-const MAX_USER_COUNT = 2;
-const TURN_COLOR = [0x407ced, 0xed4245];
-const NUMBER_ICON = [':zero:', ':one:', ':two:', ':three:', ':four:', ':five:', ':six:', ':seven:', ':eight:', ':nine:'];
+import { Session } from './class/Session';
+import { History } from './class/History';
+import { MAX_USER_COUNT, TURN_COLOR, NUMBER_ICON } from './common/constants';
+import { deleteSessionMessageFromKey, judgeNumber, notificationReply, toHalfWidthDigit } from './common/util';
 
 export const commands: Commands = {
     debug: {
         description: '🔧 デバッグ',
         options: [],
-        execute: async (interaction: CommandInteraction, session) => {
+        execute: async (interaction: CommandInteraction, session: Session) => {
             if (interaction.user.id !== session.hostId) {
                 await notificationReply(interaction, 'このコマンドを実行する権限がありません。');
                 return;
@@ -73,7 +71,7 @@ export const commands: Commands = {
     join: {
         description: '',
         options: [],
-        execute: async (interaction: ButtonInteraction, session) => {
+        execute: async (interaction: ButtonInteraction, session: Session) => {
             if (session.playerMap.size >= MAX_USER_COUNT) {
                 await notificationReply(interaction, '参加人数が上限に達しました。');
                 return;
@@ -93,7 +91,7 @@ export const commands: Commands = {
 
             session.currentPlayer = playFirst?.user;
 
-            const channel = await interaction.guild?.channels.fetch(interaction.channelId || '');
+            const channel = await interaction.guild?.channels.fetch(interaction.channelId ?? '');
             if (channel?.isTextBased()) {
                 channel.send({
                     content: `先攻: ${playFirst?.toString()}\n後攻: ${drawFirst?.toString()}`,
@@ -142,13 +140,13 @@ export const commands: Commands = {
     select: {
         description: '',
         options: [],
-        execute: async (interaction: ModalSubmitInteraction, session) => {
+        execute: async (interaction: ModalSubmitInteraction, session: Session) => {
             const selectNumber: string = toHalfWidthDigit(interaction.fields.getTextInputValue('select'));
             if (isNaN(Number(selectNumber)) || !/^\d{3}$/.test(selectNumber)) {
                 await notificationReply(interaction, '３桁の番号を入力してください。');
                 return;
             }
-            if ([...selectNumber].some(n => (selectNumber.match(new RegExp(n, 'g'))?.length || 0) > 1)) {
+            if ([...selectNumber].some(n => (selectNumber.match(new RegExp(n, 'g'))?.length ?? 0) > 1)) {
                 await notificationReply(interaction, '同じ数字を含まないでください。');
                 return;
             }
@@ -157,7 +155,7 @@ export const commands: Commands = {
             if ([...session.playerMap.values()].every(hand => Boolean(hand))) {
                 interaction.message?.delete();
 
-                const channel = await interaction.guild?.channels.fetch(interaction.channelId || '');
+                const channel = await interaction.guild?.channels.fetch(interaction.channelId ?? '');
                 if (channel?.isTextBased()) {
                     channel.send({
                         files: [
@@ -174,6 +172,7 @@ export const commands: Commands = {
                         components: [
                             new ActionRowBuilder<ButtonBuilder>().addComponents(
                                 new ButtonBuilder().setCustomId('callModal').setLabel('コール').setStyle(ButtonStyle.Success),
+                                new ButtonBuilder().setCustomId('history').setLabel('履歴').setStyle(ButtonStyle.Secondary).setDisabled(true),
                                 new ButtonBuilder().setLabel('詳細ルール').setURL('https://ja.wikipedia.org/wiki/Numer0n#ルール').setStyle(ButtonStyle.Link)
                             )
                         ],
@@ -182,7 +181,7 @@ export const commands: Commands = {
             }
 
             await interaction.reply({
-                content: `あなたの番号: ${[...selectNumber].map(n => NUMBER_ICON[Number(n)]).join(' ')}`,
+                content: `あなたの番号： ${[...selectNumber].map(n => NUMBER_ICON[Number(n)]).join(' ')}`,
                 ephemeral: true,
             });
         }
@@ -190,7 +189,7 @@ export const commands: Commands = {
     callModal: {
         description: '',
         options: [],
-        execute: async (interaction: ButtonInteraction, session) => {
+        execute: async (interaction: ButtonInteraction, session: Session) => {
             if (interaction.user.id !== session.currentPlayer?.id) {
                 await notificationReply(interaction, 'あなたのターンではありません。');
                 return;
@@ -215,7 +214,7 @@ export const commands: Commands = {
     call: {
         description: '',
         options: [],
-        execute: async (interaction: ModalSubmitInteraction, session) => {
+        execute: async (interaction: ModalSubmitInteraction, session: Session) => {
             if (interaction.user.id !== session.currentPlayer?.id) {
                 await notificationReply(interaction, 'あなたのターンではありません。');
                 return;
@@ -232,7 +231,7 @@ export const commands: Commands = {
                 session.currentPlayer = member.user;
             });
 
-            await interaction.message?.edit({
+            interaction.message?.edit({
                 embeds: [
                     new EmbedBuilder()
                         .setColor(TURN_COLOR[session.turn])
@@ -241,19 +240,77 @@ export const commands: Commands = {
                         .setDescription('相手の数字を予想して３桁の番号をコールしてください。')
                         .setImage('attachment://call.png')
                 ],
+                components: [
+                    new ActionRowBuilder<ButtonBuilder>().addComponents(
+                        new ButtonBuilder().setCustomId('callModal').setLabel('コール').setStyle(ButtonStyle.Success),
+                        new ButtonBuilder().setCustomId('history').setLabel('履歴').setStyle(ButtonStyle.Secondary).setDisabled(false),
+                        new ButtonBuilder().setLabel('詳細ルール').setURL('https://ja.wikipedia.org/wiki/Numer0n#ルール').setStyle(ButtonStyle.Link)
+                    )
+                ],
             });
 
             const targetHand = session.playerMap.get(session.currentPlayer?.id)!;
-            const result = judgeNumber(guessNumber, targetHand);
+            const result: History = judgeNumber(guessNumber, targetHand);
+            
+            const histories = session.history.get(interaction.user.id) ?? new Array<History>();
+            histories.push(result);
+            session.history.set(interaction.user.id, histories);
+
+            await deleteSessionMessageFromKey(session, 'call');
+
             await interaction.reply({
                 embeds: [
                     new EmbedBuilder()
-                        .setColor(0xed04eb)
+                        .setColor(0xf0b132)
                         .setAuthor({ name: `${interaction.user.displayName} の予想`, iconURL: interaction.user.displayAvatarURL() })
                         .setTitle([...guessNumber].map(n => NUMBER_ICON[Number(n)]).join(' '))
-                        .setDescription(`**${result.eat}EAT，${result.bite}BITE**`)
+                        .setDescription(`**${result.eat}EAT ， ${result.bite}BITE**`)
                 ],
-            });
+            }).then(msg => session.messages.set('call', msg));
         }
     },
+    history: {
+        description: '',
+        options: [],
+        execute: async (interaction: ButtonInteraction, session: Session) => {
+            if (!session.playerMap.has(interaction.user.id)) {
+                await notificationReply(interaction, 'ゲームに参加していません。');
+                return;
+            }
+
+            const histories = session.history.get(interaction.user.id);
+            if (!histories || !histories.length) {
+                await notificationReply(interaction, '履歴が存在しません。');
+                return;
+            }
+
+            const embed = new EmbedBuilder()
+                .setColor(0x4f545c)
+                .setAuthor({ name: `${interaction.user.displayName} の履歴`, iconURL: interaction.user.displayAvatarURL() });
+            
+            histories.forEach((history, i) => embed.addFields({
+                name: `${i+1}回目`,
+                value: history.toString(),
+            }));
+            
+            await deleteSessionMessageFromKey(session, `history-${interaction.user.id}`);
+
+            await interaction.reply({
+                embeds: [embed],
+                components: [
+                    new ActionRowBuilder<ButtonBuilder>().addComponents(
+                        new ButtonBuilder().setCustomId('closeHistory').setLabel('閉じる').setStyle(ButtonStyle.Danger)
+                    )
+                ],
+                ephemeral: true,
+            }).then(msg => session.messages.set(`history-${interaction.user.id}`, msg));
+        },
+    },
+    closeHistory: {
+        description: '',
+        options: [],
+        execute: async (interaction: ButtonInteraction, session: Session) => {
+            await deleteSessionMessageFromKey(session, `history-${interaction.user.id}`);
+        }
+    }
 }

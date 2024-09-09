@@ -1,7 +1,9 @@
 import * as fs from 'fs';
 import { ButtonInteraction, CommandInteraction, ModalSubmitInteraction, REST, Routes } from 'discord.js';
 
-import { Commands, Command, BotSetting } from './typedef';
+import { Commands, Command, BotSetting } from '../typedef';
+import { History } from '../class/History';
+import { Session } from '../class/Session';
 
 /**
  * Converts full-width numbers to half-width numbers
@@ -22,11 +24,11 @@ export function toHalfWidthDigit(digit: string): string {
  * @param hand 
  * @returns judgementResult
  */
-export function judgeNumber(guess: string, hand: string): {eat: number, bite: number} {
+export function judgeNumber(guess: string, hand: string): History {
     const eat = [...guess].filter((n, i) => n === hand[i]).length
     const bite = [...guess].filter(n => hand.includes(n)).length - eat;
     
-    return { eat, bite };
+    return new History(guess, eat, bite);
 }
 
 /**
@@ -79,6 +81,23 @@ export async function registSlashCommands(commands: Commands, setting: BotSettin
     }
 }
 
+/**
+ * Delete previous replies held in the session
+ * 
+ * @param session 
+ * @param key 
+ */
+export async function deleteSessionMessageFromKey(session: Session, key: string): Promise<void> {
+    const message = session.messages.get(key);
+    if (message) await message.delete().then(() => session.messages.delete(key));
+}
+
+/**
+ * Send reply to be deleted after 3 seconds
+ * 
+ * @param interaction 
+ * @param content 
+ */
 export async function notificationReply(interaction: CommandInteraction | ButtonInteraction | ModalSubmitInteraction, content: string): Promise<void> {
     await interaction.reply({ content, ephemeral: true }).then(msg => {
         setTimeout(() => {

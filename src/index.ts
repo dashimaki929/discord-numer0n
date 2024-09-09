@@ -3,10 +3,10 @@ dotenv.config();
 
 import { Client, GatewayIntentBits } from 'discord.js';
 
-import { BotSetting, Sessions } from './typedef';
-import { Session } from './Session';
 import { commands } from './commands';
-import { notificationReply, registSlashCommands } from './util';
+import { BotSetting, Sessions } from './typedef';
+import { Session } from './class/Session';
+import { notificationReply, registSlashCommands } from './common/util';
 
 const settings: BotSetting = { id: process.env.DISCORD_BOT_ID || '', token: process.env.DISCORD_BOT_TOKEN || '' };
 const sessions: Sessions = {};
@@ -38,7 +38,6 @@ client.on('interactionCreate', interaction => {
                 session = new Session(interaction.user);
             }
         }
-
         if (!session) {
             notificationReply(interaction, 'ホストされているゲームがありません。');
             return;

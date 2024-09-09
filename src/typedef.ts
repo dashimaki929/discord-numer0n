@@ -1,5 +1,5 @@
 import { CommandInteraction, ButtonInteraction, ModalSubmitInteraction } from 'discord.js';
-import { Session } from './Session';
+import { Session } from './class/Session';
 
 export type BotSetting = {
     id: string;
