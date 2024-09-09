@@ -4,9 +4,36 @@ import { ButtonInteraction, CommandInteraction, ModalSubmitInteraction, REST, Ro
 import { Commands, Command, BotSetting } from './typedef';
 
 /**
+ * Converts full-width numbers to half-width numbers
+ * 
+ * @param digit
+ * @returns halfWidthDigit
+ */
+export function toHalfWidthDigit(digit: string): string {
+    return digit.replace(/[０-９]/g, c => {
+        return String.fromCharCode(c.charCodeAt(0) - 0xFEE0);
+    })
+}
+
+/**
+ * Judge the results of player's guess.
+ * 
+ * @param guess 
+ * @param hand 
+ * @returns judgementResult
+ */
+export function judgeNumber(guess: string, hand: string): {eat: number, bite: number} {
+    const eat = [...guess].filter((n, i) => n === hand[i]).length
+    const bite = [...guess].filter(n => hand.includes(n)).length - eat;
+    
+    return { eat, bite };
+}
+
+/**
  * Read file as text
  *
  * @param filepath
+ * @returns data
  */
 export function readFile(filepath: string): string {
     let data = '';
@@ -27,7 +54,7 @@ export function readFile(filepath: string): string {
  * @param commands 
  * @param setting 
  */
-export async function registSlashCommands(commands: Commands, setting: BotSetting) {
+export async function registSlashCommands(commands: Commands, setting: BotSetting): Promise<void> {
     const rest = new REST({ version: '10' }).setToken(setting.token);
 
     try {
@@ -52,10 +79,10 @@ export async function registSlashCommands(commands: Commands, setting: BotSettin
     }
 }
 
-export async function notificationReply(interaction: CommandInteraction | ButtonInteraction | ModalSubmitInteraction, content: string) {
+export async function notificationReply(interaction: CommandInteraction | ButtonInteraction | ModalSubmitInteraction, content: string): Promise<void> {
     await interaction.reply({ content, ephemeral: true }).then(msg => {
         setTimeout(() => {
             msg.delete();
-        }, 2000);
+        }, 3000);
     })
 }

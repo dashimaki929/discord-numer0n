@@ -9,14 +9,15 @@ import {
     ModalBuilder,
     TextInputBuilder,
     TextInputStyle,
-    ModalSubmitInteraction
+    ModalSubmitInteraction,
+    TextChannel
 } from 'discord.js';
 
 import { Commands } from './typedef';
-import { User } from './User';
-import { notificationReply } from './util';
+import { judgeNumber, notificationReply, toHalfWidthDigit } from './util';
 
 const MAX_USER_COUNT = 2;
+const TURN_COLOR = [0x407ced, 0xed4245];
 const NUMBER_ICON = [':zero:', ':one:', ':two:', ':three:', ':four:', ':five:', ':six:', ':seven:', ':eight:', ':nine:'];
 
 export const commands: Commands = {
@@ -24,22 +25,17 @@ export const commands: Commands = {
         description: '🔧 デバッグ',
         options: [],
         execute: async (interaction: CommandInteraction, session) => {
+            if (interaction.user.id !== session.hostId) {
+                await notificationReply(interaction, 'このコマンドを実行する権限がありません。');
+                return;
+            }
             await interaction.reply(`\`\`\`json\n${JSON.stringify(session, null, '\t')}\n\`\`\``);
         }
     },
     host: {
         description: '🟢 ゲームをホスト',
         options: [],
-        execute: async (interaction: CommandInteraction, session) => {
-            if (session.hostUserId) {
-                notificationReply(interaction, '既にゲームがホストされています。\n※１つのテキストチャンネルで１ゲームのみ立ち上げられます。');
-                return;
-            }
-
-            const userId = interaction.user.id;
-            session.hostUserId = userId;
-            session.userList.push(new User(userId));
-
+        execute: async (interaction: CommandInteraction) => {
             await interaction.reply({
                 files: [
                     new AttachmentBuilder('./img/banner.png').setName('banner.png')
@@ -67,7 +63,7 @@ export const commands: Commands = {
                 ],
                 components: [
                     new ActionRowBuilder<ButtonBuilder>().addComponents(
-                        new ButtonBuilder().setCustomId('join').setLabel('ゲームに参加する').setStyle(ButtonStyle.Success),
+                        new ButtonBuilder().setCustomId('join').setLabel('ゲームに参加').setStyle(ButtonStyle.Success),
                         new ButtonBuilder().setLabel('詳細ルール').setURL('https://ja.wikipedia.org/wiki/Numer0n#ルール').setStyle(ButtonStyle.Link)
                     )
                 ],
@@ -78,56 +74,58 @@ export const commands: Commands = {
         description: '',
         options: [],
         execute: async (interaction: ButtonInteraction, session) => {
-            if (!session.hostUserId) {
-                notificationReply(interaction, 'ホストされているゲームがありません。');
+            if (session.playerMap.size >= MAX_USER_COUNT) {
+                await notificationReply(interaction, '参加人数が上限に達しました。');
                 return;
             }
-            if (session.userList.length >= MAX_USER_COUNT) {
-                notificationReply(interaction, '参加人数が上限に達しました。');
-                return;
-            }
-            if (session.userList.filter(user => user.id === interaction.user.id).length) {
-                notificationReply(interaction, '既に参加済みです。');
+            if (session.playerMap.has(interaction.user.id)) {
+                await notificationReply(interaction, '既に参加済みです。');
                 return;
             }
 
-            session.userList.push(new User(interaction.user.id));
+            session.playerMap.set(interaction.user.id, '');
             interaction.message.delete();
 
-            const i = Math.round(Math.random());
             const [playFirst, drawFirst] = [
-                await interaction.guild?.members.fetch(session.userList[i].id),
-                await interaction.guild?.members.fetch(session.userList[i ^ 1].id)
+                await interaction.guild?.members.fetch([...session.playerMap.keys()][session.turn]),
+                await interaction.guild?.members.fetch([...session.playerMap.keys()][session.turn ^ 1])
             ];
 
-            await interaction.reply({
-                content: `先攻: ${playFirst?.toString()}\n後攻: ${drawFirst?.toString()}`,
-                files: [
-                    new AttachmentBuilder('./img/selecthand.png').setName('selecthand.png')
-                ],
-                embeds: [
-                    new EmbedBuilder()
-                        .setColor(0xed04eb)
-                        .setTitle('～番号決めフェーズ～')
-                        .setDescription('0~9 の数字を用いて、同じ数字が含まれない３桁の番号を作ってください。')
-                        .setImage('attachment://selecthand.png')
-                ],
-                components: [
-                    new ActionRowBuilder<ButtonBuilder>().addComponents(
-                        new ButtonBuilder().setCustomId('selectModal').setLabel('番号を決める').setStyle(ButtonStyle.Success),
-                        new ButtonBuilder().setLabel('詳細ルール').setURL('https://ja.wikipedia.org/wiki/Numer0n#ルール').setStyle(ButtonStyle.Link)
-                    )
-                ],
-            });
+            session.currentPlayer = playFirst?.user;
+
+            const channel = await interaction.guild?.channels.fetch(interaction.channelId || '');
+            if (channel?.isTextBased()) {
+                channel.send({
+                    content: `先攻: ${playFirst?.toString()}\n後攻: ${drawFirst?.toString()}`,
+                    files: [
+                        new AttachmentBuilder('./img/selecthand.png').setName('selecthand.png')
+                    ],
+                    embeds: [
+                        new EmbedBuilder()
+                            .setColor(0xed04eb)
+                            .setTitle('～番号決めフェーズ～')
+                            .setDescription('0~9 の数字を用いて、同じ数字が含まれない３桁の番号を作ってください。')
+                            .setImage('attachment://selecthand.png')
+                    ],
+                    components: [
+                        new ActionRowBuilder<ButtonBuilder>().addComponents(
+                            new ButtonBuilder().setCustomId('selectModal').setLabel('番号を決める').setStyle(ButtonStyle.Success),
+                            new ButtonBuilder().setLabel('詳細ルール').setURL('https://ja.wikipedia.org/wiki/Numer0n#ルール').setStyle(ButtonStyle.Link)
+                        )
+                    ],
+                });
+            }
+
+            await interaction.deferUpdate();
         }
     },
     selectModal: {
         description: '',
         options: [],
         execute: async (interaction: ButtonInteraction) => {
-            const modal = new ModalBuilder()
+            await interaction.showModal(new ModalBuilder()
                 .setCustomId('select')
-                .setTitle('番号を入力')
+                .setTitle('自分の番号を入力')
                 .addComponents(new ActionRowBuilder<TextInputBuilder>()
                     .addComponents(new TextInputBuilder()
                         .setCustomId('select')
@@ -138,26 +136,124 @@ export const commands: Commands = {
                         .setPlaceholder('XXX')
                         .setRequired(true)
                     )
-                );
-
-            await interaction.showModal(modal);
+                ));
         }
     },
     select: {
         description: '',
         options: [],
         execute: async (interaction: ModalSubmitInteraction, session) => {
-            const num: string = interaction.fields.getTextInputValue('select');
-            if (isNaN(Number(num))) {
-                notificationReply(interaction, '３桁の番号を入力してください。');
+            const selectNumber: string = toHalfWidthDigit(interaction.fields.getTextInputValue('select'));
+            if (isNaN(Number(selectNumber)) || !/^\d{3}$/.test(selectNumber)) {
+                await notificationReply(interaction, '３桁の番号を入力してください。');
                 return;
             }
-            if (num.split('').some(n => (num.match(new RegExp(n, 'g'))?.length || 0) > 1)) {
-                notificationReply(interaction, '同じ数字を含まないでください。');
+            if ([...selectNumber].some(n => (selectNumber.match(new RegExp(n, 'g'))?.length || 0) > 1)) {
+                await notificationReply(interaction, '同じ数字を含まないでください。');
                 return;
             }
 
-            interaction.reply({ content: 'ok', ephemeral: true });
+            session.playerMap.set(interaction.user.id, selectNumber);
+            if ([...session.playerMap.values()].every(hand => Boolean(hand))) {
+                interaction.message?.delete();
+
+                const channel = await interaction.guild?.channels.fetch(interaction.channelId || '');
+                if (channel?.isTextBased()) {
+                    channel.send({
+                        files: [
+                            new AttachmentBuilder('./img/call.png').setName('call.png')
+                        ],
+                        embeds: [
+                            new EmbedBuilder()
+                                .setColor(TURN_COLOR[session.turn])
+                                .setAuthor({ name: `${session.currentPlayer?.displayName} のターン`, iconURL: session.currentPlayer?.displayAvatarURL() })
+                                .setTitle('～コールフェーズ～')
+                                .setDescription('相手の数字を予想して３桁の番号をコールしてください。')
+                                .setImage('attachment://call.png')
+                        ],
+                        components: [
+                            new ActionRowBuilder<ButtonBuilder>().addComponents(
+                                new ButtonBuilder().setCustomId('callModal').setLabel('コール').setStyle(ButtonStyle.Success),
+                                new ButtonBuilder().setLabel('詳細ルール').setURL('https://ja.wikipedia.org/wiki/Numer0n#ルール').setStyle(ButtonStyle.Link)
+                            )
+                        ],
+                    });
+                }
+            }
+
+            await interaction.reply({
+                content: `あなたの番号: ${[...selectNumber].map(n => NUMBER_ICON[Number(n)]).join(' ')}`,
+                ephemeral: true,
+            });
         }
-    }
+    },
+    callModal: {
+        description: '',
+        options: [],
+        execute: async (interaction: ButtonInteraction, session) => {
+            if (interaction.user.id !== session.currentPlayer?.id) {
+                await notificationReply(interaction, 'あなたのターンではありません。');
+                return;
+            }
+
+            await interaction.showModal(new ModalBuilder()
+                .setCustomId('call')
+                .setTitle('相手の番号を予想')
+                .addComponents(new ActionRowBuilder<TextInputBuilder>()
+                    .addComponents(new TextInputBuilder()
+                        .setCustomId('call')
+                        .setLabel('３桁の番号を予想してください。')
+                        .setStyle(TextInputStyle.Short)
+                        .setMinLength(3)
+                        .setMaxLength(3)
+                        .setPlaceholder('XXX')
+                        .setRequired(true)
+                    )
+                ));
+        }
+    },
+    call: {
+        description: '',
+        options: [],
+        execute: async (interaction: ModalSubmitInteraction, session) => {
+            if (interaction.user.id !== session.currentPlayer?.id) {
+                await notificationReply(interaction, 'あなたのターンではありません。');
+                return;
+            }
+
+            const guessNumber: string = toHalfWidthDigit(interaction.fields.getTextInputValue('call'));
+            if (isNaN(Number(guessNumber)) || !/^\d{3}$/.test(guessNumber)) {
+                await notificationReply(interaction, '３桁の番号を入力してください。');
+                return;
+            }
+
+            session.turn ^= 1;
+            await interaction.guild?.members.fetch([...session.playerMap.keys()][session.turn]).then(member => {
+                session.currentPlayer = member.user;
+            });
+
+            await interaction.message?.edit({
+                embeds: [
+                    new EmbedBuilder()
+                        .setColor(TURN_COLOR[session.turn])
+                        .setAuthor({ name: `${session.currentPlayer?.displayName} のターン`, iconURL: session.currentPlayer?.displayAvatarURL() })
+                        .setTitle('～コールフェーズ～')
+                        .setDescription('相手の数字を予想して３桁の番号をコールしてください。')
+                        .setImage('attachment://call.png')
+                ],
+            });
+
+            const targetHand = session.playerMap.get(session.currentPlayer?.id)!;
+            const result = judgeNumber(guessNumber, targetHand);
+            await interaction.reply({
+                embeds: [
+                    new EmbedBuilder()
+                        .setColor(0xed04eb)
+                        .setAuthor({ name: `${interaction.user.displayName} の予想`, iconURL: interaction.user.displayAvatarURL() })
+                        .setTitle([...guessNumber].map(n => NUMBER_ICON[Number(n)]).join(' '))
+                        .setDescription(`**${result.eat}EAT，${result.bite}BITE**`)
+                ],
+            });
+        }
+    },
 }
