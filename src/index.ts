@@ -1,7 +1,7 @@
 import * as dotenv from 'dotenv';
 dotenv.config();
 
-import { Client, GatewayIntentBits } from 'discord.js';
+import { ActivityType, Client, GatewayIntentBits } from 'discord.js';
 
 import { commands } from './commands';
 import { BotSetting, Sessions } from './typedef';
@@ -17,6 +17,8 @@ const client = new Client({
 
 client.once('ready', async () => {
     await registSlashCommands(commands, settings);
+
+    client.user?.setActivity('/host でゲームを開始！', { type: ActivityType.Custom });
 
     console.log('Bot "discord-numer0n" has successfully started!');
 });
