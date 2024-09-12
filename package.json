@@ -1,0 +1,33 @@
+{
+  "name": "discord-numer0n",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node ./dist/index.js",
+    "build": "tsc -p .",
+    "build:live": "nodemon --watch src/**/*.ts --exec ts-node ./src/index.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dashimaki929/discord-numer0n.git"
+  },
+  "engines": {
+    "node": "20.x"
+  },
+  "author": "dashimaki929",
+  "license": "ISC",
+  "prettier": {
+    "singleQuote": true,
+    "semi": true,
+    "tabWidth": 4
+  },
+  "dependencies": {
+    "@types/node": "^22.5.4",
+    "discord.js": "^14.16.1",
+    "dotenv": "^16.4.5",
+    "nodemon": "^3.1.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.4"
+  }
+}
