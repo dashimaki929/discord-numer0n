@@ -1,6 +1,6 @@
 import { NUMBER_ICON } from "../common/constants";
 
-export class History {
+export class Result {
     guess: string;
     eat: number;
     bite: number;

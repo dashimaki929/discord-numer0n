@@ -1,23 +1,23 @@
 import { InteractionResponse, Message, User } from "discord.js";
-import { History } from './History';
+import { Result } from './Result';
 
 export class Session {
     hostId: string;
-    playerMap: Map<string, string>;
+    players: Map<string, string>;
     
     turn: number;
     currentPlayer: User | undefined;
 
     messages: Map<string, Message | InteractionResponse>;
-    history: Map<string, Array<History>>
+    histories: Map<string, Array<Result>>
 
-    constructor(player: User) {
-        this.hostId = player.id;
-        this.playerMap = new Map().set(player.id, '');
+    constructor(hostId: string) {
+        this.hostId = hostId;
+        this.players = new Map().set(hostId, '');
 
         this.turn = Math.round(Math.random());
 
         this.messages = new Map();
-        this.history = new Map();
+        this.histories = new Map();
     }
 }

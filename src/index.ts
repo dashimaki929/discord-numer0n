@@ -35,7 +35,7 @@ client.on('interactionCreate', interaction => {
                 notificationReply(interaction, '既にゲームがホストされています。\n※１つのテキストチャンネルで１ゲームのみ立ち上げられます。');
                 return;
             } else {
-                session = new Session(interaction.user);
+                session = new Session(interaction.user.id);
             }
         }
         if (!session) {

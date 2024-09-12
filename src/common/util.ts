@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import { ButtonInteraction, CommandInteraction, ModalSubmitInteraction, REST, Routes } from 'discord.js';
 
 import { Commands, Command, BotSetting } from '../typedef';
-import { History } from '../class/History';
+import { Result } from '../class/Result';
 import { Session } from '../class/Session';
 
 /**
@@ -24,11 +24,11 @@ export function toHalfWidthDigit(digit: string): string {
  * @param hand 
  * @returns judgementResult
  */
-export function judgeNumber(guess: string, hand: string): History {
+export function judgeNumber(guess: string, hand: string): Result {
     const eat = [...guess].filter((n, i) => n === hand[i]).length
     const bite = [...guess].filter(n => hand.includes(n)).length - eat;
     
-    return new History(guess, eat, bite);
+    return new Result(guess, eat, bite);
 }
 
 /**

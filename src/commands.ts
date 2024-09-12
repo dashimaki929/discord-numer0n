@@ -14,8 +14,8 @@ import {
 
 import { Commands } from './typedef';
 import { Session } from './class/Session';
-import { History } from './class/History';
-import { MAX_USER_COUNT, TURN_COLOR, NUMBER_ICON } from './common/constants';
+import { Result } from './class/Result';
+import { MAX_USER_COUNT, COLORS, TURN_COLOR, NUMBER_ICON } from './common/constants';
 import { deleteSessionMessageFromKey, judgeNumber, notificationReply, toHalfWidthDigit } from './common/util';
 
 export const commands: Commands = {
@@ -27,7 +27,14 @@ export const commands: Commands = {
                 await notificationReply(interaction, 'このコマンドを実行する権限がありません。');
                 return;
             }
-            await interaction.reply(`\`\`\`json\n${JSON.stringify(session, null, '\t')}\n\`\`\``);
+            await interaction.reply({
+                content: [
+                    '```JSON',
+                    JSON.stringify(session, null, '\t'),
+                    '```',
+                ].join('\n'),
+                ephemeral: true,
+            });
         }
     },
     host: {
@@ -40,7 +47,7 @@ export const commands: Commands = {
                 ],
                 embeds: [
                     new EmbedBuilder()
-                        .setColor(0xed04eb)
+                        .setColor(COLORS.PRIMARY)
                         .setAuthor({ name: `${interaction.user.displayName} がゲームをホストしました！`, iconURL: interaction.user.displayAvatarURL() })
                         .setTitle('知的数字ゲーム「NumerØn」')
                         .setDescription('2人のプレイヤーが互いの指定した数字を当てる知的ゲーム。')
@@ -72,21 +79,21 @@ export const commands: Commands = {
         description: '',
         options: [],
         execute: async (interaction: ButtonInteraction, session: Session) => {
-            if (session.playerMap.size >= MAX_USER_COUNT) {
+            if (session.players.size >= MAX_USER_COUNT) {
                 await notificationReply(interaction, '参加人数が上限に達しました。');
                 return;
             }
-            if (session.playerMap.has(interaction.user.id)) {
+            if (session.players.has(interaction.user.id)) {
                 await notificationReply(interaction, '既に参加済みです。');
                 return;
             }
 
-            session.playerMap.set(interaction.user.id, '');
+            session.players.set(interaction.user.id, '');
             interaction.message.delete();
 
             const [playFirst, drawFirst] = [
-                await interaction.guild?.members.fetch([...session.playerMap.keys()][session.turn]),
-                await interaction.guild?.members.fetch([...session.playerMap.keys()][session.turn ^ 1])
+                await interaction.guild?.members.fetch([...session.players.keys()][session.turn]),
+                await interaction.guild?.members.fetch([...session.players.keys()][session.turn ^ 1])
             ];
 
             session.currentPlayer = playFirst?.user;
@@ -100,7 +107,7 @@ export const commands: Commands = {
                     ],
                     embeds: [
                         new EmbedBuilder()
-                            .setColor(0xed04eb)
+                            .setColor(COLORS.PRIMARY)
                             .setTitle('～番号決めフェーズ～')
                             .setDescription('0~9 の数字を用いて、同じ数字が含まれない３桁の番号を作ってください。')
                             .setImage('attachment://selecthand.png')
@@ -151,8 +158,8 @@ export const commands: Commands = {
                 return;
             }
 
-            session.playerMap.set(interaction.user.id, selectNumber);
-            if ([...session.playerMap.values()].every(hand => Boolean(hand))) {
+            session.players.set(interaction.user.id, selectNumber);
+            if ([...session.players.values()].every(hand => Boolean(hand))) {
                 interaction.message?.delete();
 
                 const channel = await interaction.guild?.channels.fetch(interaction.channelId ?? '');
@@ -183,7 +190,7 @@ export const commands: Commands = {
             await interaction.reply({
                 content: `あなたの番号： ${[...selectNumber].map(n => NUMBER_ICON[Number(n)]).join(' ')}`,
                 ephemeral: true,
-            });
+            }).then(msg => session.messages.set(`select-${interaction.user.id}`, msg));
         }
     },
     callModal: {
@@ -227,7 +234,7 @@ export const commands: Commands = {
             }
 
             session.turn ^= 1;
-            await interaction.guild?.members.fetch([...session.playerMap.keys()][session.turn]).then(member => {
+            await interaction.guild?.members.fetch([...session.players.keys()][session.turn]).then(member => {
                 session.currentPlayer = member.user;
             });
 
@@ -249,68 +256,101 @@ export const commands: Commands = {
                 ],
             });
 
-            const targetHand = session.playerMap.get(session.currentPlayer?.id)!;
-            const result: History = judgeNumber(guessNumber, targetHand);
-            
-            const histories = session.history.get(interaction.user.id) ?? new Array<History>();
-            histories.push(result);
-            session.history.set(interaction.user.id, histories);
+            const targetHand = session.players.get(session.currentPlayer?.id)!;
+            const result: Result = judgeNumber(guessNumber, targetHand);
 
-            await deleteSessionMessageFromKey(session, 'call');
+            const history = session.histories.get(interaction.user.id) ?? new Array<Result>();
+            history.push(result);
+            session.histories.set(interaction.user.id, history);
 
-            await interaction.reply({
-                embeds: [
-                    new EmbedBuilder()
-                        .setColor(0xf0b132)
-                        .setAuthor({ name: `${interaction.user.displayName} の予想`, iconURL: interaction.user.displayAvatarURL() })
-                        .setTitle([...guessNumber].map(n => NUMBER_ICON[Number(n)]).join(' '))
-                        .setDescription(`**${result.eat}EAT ， ${result.bite}BITE**`)
-                ],
-            }).then(msg => session.messages.set('call', msg));
+            const channel = await interaction.guild?.channels.fetch(interaction.channelId ?? '');
+            if (channel?.isTextBased()) {
+                await deleteSessionMessageFromKey(session, 'call');
+                await channel.send({
+                    embeds: [
+                        new EmbedBuilder()
+                            .setColor(COLORS.SECONDARY)
+                            .setAuthor({ name: `${interaction.user.displayName} の予想`, iconURL: interaction.user.displayAvatarURL() })
+                            .setTitle([...guessNumber].map(n => NUMBER_ICON[Number(n)]).join(' '))
+                            .setDescription(`**${result.eat}EAT ， ${result.bite}BITE**`)
+                    ],
+                }).then(msg => session.messages.set('call', msg));
+            }
+
+            if (result.eat === 3) {
+                await interaction.message?.delete();
+                await interaction.reply({
+                    embeds: [
+                        new EmbedBuilder()
+                            .setColor(COLORS.SECONDARY)
+                            .setTitle('～ゲーム終了～')
+                            .setDescription([
+                                `勝者： ${interaction.user.toString()}`,
+                                `ターン数： ${history.length}ターン`
+                            ].join('\n'))
+                            .setThumbnail(interaction.user.displayAvatarURL())
+                    ],
+                    components: [
+                        new ActionRowBuilder<ButtonBuilder>().addComponents(
+                            new ButtonBuilder().setCustomId('end').setLabel('終了').setStyle(ButtonStyle.Danger),
+                        )
+                    ],
+                });
+
+                return;
+            }
+
+            const historyEmbed = new EmbedBuilder()
+                .setColor(COLORS.OTHER)
+                .setAuthor({ name: `${interaction.user.displayName} の履歴`, iconURL: interaction.user.displayAvatarURL() });
+
+            history.forEach((r, i) => historyEmbed.addFields({
+                name: `${i + 1}回目`,
+                value: r.toString(),
+            }));
+
+            const historyMessageKey = `history-${interaction.user.id}`;
+            const historyMessage = session.messages.get(historyMessageKey);
+            if (historyMessage) {
+                await historyMessage.edit({ embeds: [historyEmbed] });
+                await interaction.deferUpdate();
+            } else {
+                await interaction.reply({ embeds: [historyEmbed], ephemeral: true }).then(msg => session.messages.set(historyMessageKey, msg));
+            }
         }
     },
     history: {
         description: '',
         options: [],
         execute: async (interaction: ButtonInteraction, session: Session) => {
-            if (!session.playerMap.has(interaction.user.id)) {
-                await notificationReply(interaction, 'ゲームに参加していません。');
+            const history = session.histories.get(interaction.user.id) ?? new Array<Result>();
+            if (!history || !history.length) {
+                await notificationReply(interaction, '履歴がまだありません。');
                 return;
             }
 
-            const histories = session.history.get(interaction.user.id);
-            if (!histories || !histories.length) {
-                await notificationReply(interaction, '履歴が存在しません。');
-                return;
-            }
+            const historyMessageKey = `history-${interaction.user.id}`;
+            await deleteSessionMessageFromKey(session, historyMessageKey);
 
-            const embed = new EmbedBuilder()
-                .setColor(0x4f545c)
+            const historyEmbed = new EmbedBuilder()
+                .setColor(COLORS.OTHER)
                 .setAuthor({ name: `${interaction.user.displayName} の履歴`, iconURL: interaction.user.displayAvatarURL() });
-            
-            histories.forEach((history, i) => embed.addFields({
-                name: `${i+1}回目`,
-                value: history.toString(),
-            }));
-            
-            await deleteSessionMessageFromKey(session, `history-${interaction.user.id}`);
 
-            await interaction.reply({
-                embeds: [embed],
-                components: [
-                    new ActionRowBuilder<ButtonBuilder>().addComponents(
-                        new ButtonBuilder().setCustomId('closeHistory').setLabel('閉じる').setStyle(ButtonStyle.Danger)
-                    )
-                ],
-                ephemeral: true,
-            }).then(msg => session.messages.set(`history-${interaction.user.id}`, msg));
-        },
+            history.forEach((r, i) => historyEmbed.addFields({
+                name: `${i + 1}回目`,
+                value: r.toString(),
+            }));
+
+            await interaction.reply({ embeds: [historyEmbed], ephemeral: true }).then(msg => session.messages.set(historyMessageKey, msg));
+        }
     },
-    closeHistory: {
+    end: {
         description: '',
         options: [],
         execute: async (interaction: ButtonInteraction, session: Session) => {
-            await deleteSessionMessageFromKey(session, `history-${interaction.user.id}`);
+            session.messages.forEach((_, key) => deleteSessionMessageFromKey(session, key));
+            await interaction.message.delete();
+            await interaction.deferUpdate();
         }
-    }
+    },
 }
